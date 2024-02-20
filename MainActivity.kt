@@ -1,6 +1,19 @@
 package com.example.composetutorial
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -13,8 +26,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,16 +41,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.example.composetutorial.ui.theme.ComposeTutorialTheme
+import kotlin.math.sqrt
 
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -47,8 +64,69 @@ class MainActivity : ComponentActivity() {
                 NavHost(userRepository)
             }
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "example_id",
+                "notifications",
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+        accelerometerSensor()
+    }
+
+    private var accelerometerSensor: Sensor? = null
+
+    private fun accelerometerSensor() {
+        val sensorManager: SensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+
+        if (sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null) {
+            accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        }
+
+        val accelerometerSensorEventListener = object : SensorEventListener {
+
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {
+            }
+
+            override fun onSensorChanged(event: SensorEvent) {
+                if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+
+                    val x = event.values[0]
+                    val y = event.values[1]
+                    val z = event.values[2]
+                    val acceleration = sqrt((x * x + y * y + z * z).toDouble())
+                    val movementThreshold = 10.0 //default value under 10 because 9.81<10 (gravity)
+
+                    if (acceleration > movementThreshold) {
+                        showNotification()
+                        Log.d("PHONE", "PHONE IS SPINNING")
+                    }
+                }
+            }
+        }
+        sensorManager.registerListener(accelerometerSensorEventListener, accelerometerSensor, SensorManager.SENSOR_DELAY_NORMAL)
+    }
+
+    private fun showNotification() {
+
+        val intent = Intent(this, MainActivity::class.java)
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val notificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = NotificationCompat.Builder(applicationContext, "example_id")
+            .setContentText("we are moving")
+            .setContentTitle("Acceleration!")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(pendingIntent)
+            .build()
+        notificationManager.notify(1, notification)
     }
 }
+
 
 @Composable
 fun NavHost(handleUser: HandleUser) {
@@ -86,6 +164,8 @@ fun Main(navController: NavController, handleUser: HandleUser) {
 @Composable
 fun Settings(navController: NavController, handleUser: HandleUser) {
 
+    val context = LocalContext.current
+
     var lastImage by remember {
         mutableStateOf(handleUser.findUserById(0).image ?: "null")
     }
@@ -100,6 +180,26 @@ fun Settings(navController: NavController, handleUser: HandleUser) {
         }
         lastImage = handleUser.findUserById(0).image.toString()
     }
+
+    var isNotificationsEnabled by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            isNotificationsEnabled = isGranted
+        }
+    )
 
     Column {
         IconButton(
@@ -133,7 +233,27 @@ fun Settings(navController: NavController, handleUser: HandleUser) {
         TextField(value = lastName, onValueChange = {
             lastName = it
         })
+        if (!isNotificationsEnabled) {
+            Button(
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            )  {
+                Text("Enable notifications")
+            }
+        } else {
+            Button(
+                onClick = {
+                    isNotificationsEnabled = false
+                }
+            ) {
+                Text("Disable notifications")
+            }
+        }
     }
+
 }
 
 
