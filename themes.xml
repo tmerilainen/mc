@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ComposeTutorial" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.App.Start" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/teal_700</item>
+        <item name="postSplashScreenTheme">@style/Theme.ComposeTutorial</item>
+    </style>A
+</resources>
